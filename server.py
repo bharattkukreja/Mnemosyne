@@ -12,6 +12,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from config import load_config, ensure_directories
+from tools.store_tools import StoreTools
+from tools.retrieval_tools import RetrievalTools
 
 # Load configuration
 try:
@@ -24,6 +26,10 @@ except Exception as e:
 # Configure logging
 logging.basicConfig(level=getattr(logging, config.logging.level))
 logger = logging.getLogger("mnemosyne")
+
+# Initialize tools
+store_tools = StoreTools(config)
+retrieval_tools = RetrievalTools(config)
 
 # Create the MCP server
 server = Server("mnemosyne")
@@ -153,63 +159,32 @@ async def list_tools() -> list[types.Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
-    """Handle tool calls with dummy implementations for now"""
+    """Handle tool calls with real implementations"""
     
-    if name == "store_decision":
-        decision = arguments["decision"]
-        reasoning = arguments["reasoning"] 
-        files = arguments["files"]
-        tags = arguments.get("tags", [])
+    try:
+        if name == "store_decision":
+            return await store_tools.store_decision(arguments)
         
-        logger.info(f"Storing decision: {decision}")
+        elif name == "store_todo":
+            return await store_tools.store_todo(arguments)
+        
+        elif name == "search_memory":
+            return await retrieval_tools.search_memory(arguments)
+        
+        elif name == "get_session_context":
+            return await retrieval_tools.get_session_context(arguments)
+        
+        else:
+            raise ValueError(f"Unknown tool: {name}")
+            
+    except Exception as e:
+        logger.error(f"Tool call failed for {name}: {e}")
         return [
             types.TextContent(
                 type="text",
-                text=f"✅ Decision stored successfully!\n\nDecision: {decision}\nReasoning: {reasoning}\nFiles: {', '.join(files)}\nTags: {', '.join(tags) if tags else 'None'}"
+                text=f"❌ Tool '{name}' failed: {str(e)}"
             )
         ]
-    
-    elif name == "store_todo":
-        task = arguments["task"]
-        context = arguments["context"]
-        priority = arguments.get("priority", "medium")
-        files = arguments.get("files", [])
-        
-        logger.info(f"Storing TODO: {task}")
-        return [
-            types.TextContent(
-                type="text", 
-                text=f"✅ TODO stored successfully!\n\nTask: {task}\nContext: {context}\nPriority: {priority}\nFiles: {', '.join(files) if files else 'None'}"
-            )
-        ]
-    
-    elif name == "search_memory":
-        query = arguments["query"]
-        filters = arguments.get("filters", {})
-        
-        logger.info(f"Searching memory: {query}")
-        return [
-            types.TextContent(
-                type="text",
-                text=f"🔍 Search results for: '{query}'\n\nFilters: {filters}\n\n(No memories stored yet - this is a dummy implementation)"
-            )
-        ]
-    
-    elif name == "get_session_context":
-        current_files = arguments["current_files"]
-        recent_commits = arguments.get("recent_commits", [])
-        max_tokens = arguments.get("max_tokens", 2000)
-        
-        logger.info(f"Getting session context for files: {current_files}")
-        return [
-            types.TextContent(
-                type="text",
-                text=f"📋 Session Context\n\nCurrent files: {', '.join(current_files)}\nRecent commits: {', '.join(recent_commits) if recent_commits else 'None'}\nMax tokens: {max_tokens}\n\n(No context available yet - this is a dummy implementation)"
-            )
-        ]
-    
-    else:
-        raise ValueError(f"Unknown tool: {name}")
 
 
 async def main():
