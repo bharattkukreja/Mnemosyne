@@ -14,6 +14,7 @@ from mcp.server.stdio import stdio_server
 from config import load_config, ensure_directories
 from tools.store_tools import StoreTools
 from tools.retrieval_tools import RetrievalTools
+from tools.file_tools import FileTools
 
 # Load configuration
 try:
@@ -30,6 +31,7 @@ logger = logging.getLogger("mnemosyne")
 # Initialize tools
 store_tools = StoreTools(config)
 retrieval_tools = RetrievalTools(config)
+file_tools = FileTools(config)
 
 # Create the MCP server
 server = Server("mnemosyne")
@@ -153,6 +155,30 @@ async def list_tools() -> list[types.Tool]:
                 },
                 "required": ["current_files"]
             }
+        ),
+        types.Tool(
+            name="get_file_history",
+            description="Get all memory items related to a specific file",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the file to get history for"
+                    },
+                    "include_decisions": {
+                        "type": "boolean",
+                        "description": "Include architectural decisions",
+                        "default": True
+                    },
+                    "include_todos": {
+                        "type": "boolean", 
+                        "description": "Include TODO items",
+                        "default": True
+                    }
+                },
+                "required": ["filepath"]
+            }
         )
     ]
 
@@ -173,6 +199,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.Text
         
         elif name == "get_session_context":
             return await retrieval_tools.get_session_context(arguments)
+        
+        elif name == "get_file_history":
+            return await file_tools.get_file_history(arguments)
         
         else:
             raise ValueError(f"Unknown tool: {name}")

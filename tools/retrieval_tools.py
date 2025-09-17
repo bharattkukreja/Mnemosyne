@@ -7,6 +7,8 @@ from mcp import types
 from config import Config
 from memory.models import SearchQuery
 from memory.storage import MemoryStorage
+from context.relevance import RelevanceScorer
+from context.compressor import ContextCompressor
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,8 @@ class RetrievalTools:
     def __init__(self, config: Config):
         self.config = config
         self.storage = MemoryStorage(config)
+        self.relevance_scorer = RelevanceScorer()
+        self.context_compressor = ContextCompressor(config.context.max_injection_tokens)
     
     async def search_memory(self, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
         """Search through stored memories"""
@@ -34,6 +38,13 @@ class RetrievalTools:
             
             # Search memories
             results = self.storage.search_memories(search_query)
+            
+            # Improve relevance scoring
+            query_context = {
+                'intent': 'search',
+                'tags': self._extract_query_tags(query_text)
+            }
+            results = self.relevance_scorer.score_memories(results, query_context)
             
             if not results:
                 return [
@@ -117,45 +128,26 @@ class RetrievalTools:
             
             results = self.storage.search_memories(search_query)
             
-            if not results:
-                return [
-                    types.TextContent(
-                        type="text",
-                        text=f"📋 **Session Context**\n\n"
-                             f"**Current files:** {', '.join(current_files)}\n"
-                             f"**Recent commits:** {', '.join(recent_commits) if recent_commits else 'None'}\n\n"
-                             f"No relevant historical context found."
-                    )
-                ]
+            # Improve relevance scoring for context
+            query_context = {
+                'current_files': current_files,
+                'recent_commits': recent_commits,
+                'intent': 'context'
+            }
+            results = self.relevance_scorer.score_memories(results, query_context)
             
-            # Build context response
-            context_lines = [
-                "📋 **Session Context**",
-                f"**Current files:** {', '.join(current_files)}",
-                f"**Recent commits:** {', '.join(recent_commits) if recent_commits else 'None'}",
-                "",
-                "**Relevant previous decisions and context:**",
-                ""
-            ]
-            
-            for result in results:
-                memory = result.memory
-                context_lines.extend([
-                    f"• **{memory.type.title()}:** {memory.content}",
-                    f"  *{memory.reasoning}*" if memory.reasoning else "",
-                    f"  Files: {', '.join(memory.files)}" if memory.files else "",
-                    f"  ({memory.timestamp.strftime('%Y-%m-%d')})",
-                    ""
-                ])
-            
-            # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
-            estimated_tokens = len("\n".join(context_lines)) // 4
-            context_lines.append(f"*Context size: ~{estimated_tokens} tokens*")
+            # Use smart context compression
+            context_response = self.context_compressor.compress_session_context(
+                results, 
+                current_files,
+                recent_commits,
+                max_tokens
+            )
             
             return [
                 types.TextContent(
                     type="text",
-                    text="\n".join(context_lines)
+                    text=context_response
                 )
             ]
             
@@ -167,3 +159,26 @@ class RetrievalTools:
                     text=f"❌ Failed to get session context: {str(e)}"
                 )
             ]
+    
+    def _extract_query_tags(self, query_text: str) -> List[str]:
+        """Extract relevant tags from search query"""
+        tags = []
+        query_lower = query_text.lower()
+        
+        # Technology tags
+        if any(word in query_lower for word in ['api', 'endpoint', 'rest', 'graphql']):
+            tags.append('api')
+        if any(word in query_lower for word in ['database', 'db', 'sql', 'postgres', 'mongo']):
+            tags.append('database')
+        if any(word in query_lower for word in ['frontend', 'ui', 'react', 'vue', 'angular']):
+            tags.append('frontend')
+        if any(word in query_lower for word in ['backend', 'server', 'express', 'fastapi']):
+            tags.append('backend')
+        if any(word in query_lower for word in ['auth', 'security', 'permission', 'jwt']):
+            tags.append('security')
+        if any(word in query_lower for word in ['test', 'testing', 'unit', 'integration']):
+            tags.append('testing')
+        if any(word in query_lower for word in ['performance', 'speed', 'optimize']):
+            tags.append('performance')
+        
+        return tags
