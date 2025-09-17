@@ -1,0 +1,24 @@
+mcp:
+  name: "mnemosyne"
+  version: "0.1.0"
+
+storage:
+  vector_db: "chromadb"
+  vector_db_path: "~/.mnemosyne/chroma"
+  graph_db: "neo4j"
+  neo4j_uri: "bolt://localhost:7687"
+  neo4j_user: "neo4j"
+  neo4j_password: "password"
+
+embeddings:
+  model: "sentence-transformers/all-MiniLM-L6-v2"  # Local model to start
+  dimension: 384
+
+context:
+  max_injection_tokens: 2000
+  relevance_threshold: 0.7
+  max_memories_per_query: 10
+
+logging:
+  level: "INFO"
+  path: "~/.mnemosyne/logs"
