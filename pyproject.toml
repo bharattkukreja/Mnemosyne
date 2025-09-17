@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mnemosyne-mcp"
+version = "0.1.0"
+description = "Memory Layer MCP Server for AI Coding Sessions"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Bharatt Kukreja"}
+]
+keywords = ["mcp", "ai", "memory", "coding", "context"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Tools",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "mcp>=0.1.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+    "neo4j>=5.0.0",
+    "tiktoken>=0.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=22.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/mnemosyne-mcp"
+Repository = "https://github.com/your-org/mnemosyne-mcp"
+Issues = "https://github.com/your-org/mnemosyne-mcp/issues"
+
+[project.scripts]
+mnemosyne = "mnemosyne.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mnemosyne*"]
+
+[tool.setuptools.package-data]
+mnemosyne = ["config.yaml", "*.md"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "W", "B", "I"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
