@@ -15,6 +15,7 @@ from config import load_config, ensure_directories
 from tools.store_tools import StoreTools
 from tools.retrieval_tools import RetrievalTools
 from tools.file_tools import FileTools
+from tools.graph_tools import GraphTools
 
 # Load configuration
 try:
@@ -32,6 +33,7 @@ logger = logging.getLogger("mnemosyne")
 store_tools = StoreTools(config)
 retrieval_tools = RetrievalTools(config)
 file_tools = FileTools(config)
+graph_tools = GraphTools(config)
 
 # Create the MCP server
 server = Server("mnemosyne")
@@ -179,6 +181,62 @@ async def list_tools() -> list[types.Tool]:
                 },
                 "required": ["filepath"]
             }
+        ),
+        types.Tool(
+            name="explore_relationships",
+            description="Explore knowledge graph relationships around a memory",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "ID of the memory to explore relationships for"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum relationship depth to explore",
+                        "default": 2
+                    }
+                },
+                "required": ["memory_id"]
+            }
+        ),
+        types.Tool(
+            name="analyze_decision_impact",
+            description="Analyze the impact and influence of a specific decision",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "decision_id": {
+                        "type": "string",
+                        "description": "ID of the decision to analyze"
+                    }
+                },
+                "required": ["decision_id"]
+            }
+        ),
+        types.Tool(
+            name="discover_patterns",
+            description="Discover knowledge patterns and insights from the memory graph",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False
+            }
+        ),
+        types.Tool(
+            name="trace_file_evolution",
+            description="Trace the chronological evolution of decisions for a file",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the file to trace evolution for"
+                    }
+                },
+                "required": ["filepath"]
+            }
         )
     ]
 
@@ -202,6 +260,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.Text
         
         elif name == "get_file_history":
             return await file_tools.get_file_history(arguments)
+        
+        elif name == "explore_relationships":
+            return await graph_tools.explore_relationships(arguments)
+        
+        elif name == "analyze_decision_impact":
+            return await graph_tools.analyze_decision_impact(arguments)
+        
+        elif name == "discover_patterns":
+            return await graph_tools.discover_patterns(arguments)
+        
+        elif name == "trace_file_evolution":
+            return await graph_tools.trace_file_evolution(arguments)
         
         else:
             raise ValueError(f"Unknown tool: {name}")

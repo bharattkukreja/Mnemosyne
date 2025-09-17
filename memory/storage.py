@@ -10,6 +10,7 @@ from pathlib import Path
 from config import Config
 from .models import Memory, Decision, Todo, SearchQuery, SearchResult
 from .embeddings import EmbeddingGenerator
+from .graph import KnowledgeGraph
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class MemoryStorage:
     def __init__(self, config: Config):
         self.config = config
         self.embedding_generator = EmbeddingGenerator(config)
+        self.knowledge_graph = KnowledgeGraph(config)
         self._initialize_storage()
     
     def _initialize_storage(self):
@@ -71,10 +73,16 @@ class MemoryStorage:
             full_text = f"{memory.content} {memory.reasoning} {' '.join(memory.tags)}"
             memory.embedding = self.embedding_generator.generate_embedding(full_text)
             
+            # Store in primary storage (ChromaDB or file)
             if self.storage_type == "chromadb":
-                return self._store_chromadb(memory)
+                memory_id = self._store_chromadb(memory)
             else:
-                return self._store_file(memory)
+                memory_id = self._store_file(memory)
+            
+            # Store in knowledge graph
+            self.knowledge_graph.store_memory_in_graph(memory)
+            
+            return memory_id
                 
         except Exception as e:
             logger.error(f"Failed to store memory: {e}")
@@ -256,3 +264,19 @@ class MemoryStorage:
                             continue
         
         return None
+    
+    def get_related_memories(self, memory_id: str, max_depth: int = 2) -> List[Dict[str, Any]]:
+        """Get memories related through knowledge graph relationships"""
+        return self.knowledge_graph.find_related_memories(memory_id, max_depth)
+    
+    def get_file_evolution(self, file_path: str) -> List[Dict[str, Any]]:
+        """Get the chronological evolution of memories for a file"""
+        return self.knowledge_graph.get_file_evolution(file_path)
+    
+    def analyze_decision_impact(self, decision_id: str) -> Dict[str, Any]:
+        """Analyze the impact and influence of a decision"""
+        return self.knowledge_graph.get_decision_impact(decision_id)
+    
+    def discover_knowledge_patterns(self) -> Dict[str, Any]:
+        """Discover patterns and insights from the knowledge graph"""
+        return self.knowledge_graph.find_knowledge_patterns()
