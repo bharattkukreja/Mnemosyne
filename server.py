@@ -320,6 +320,27 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["message", "source"],
             },
         ),
+        types.Tool(
+            name="get_smart_context",
+            description="Get ultra-efficient smart context for session start (KILLER FEATURE)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "current_files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Files currently being worked on (auto-detected if not provided)",
+                        "default": [],
+                    },
+                    "force": {
+                        "type": "boolean",
+                        "description": "Force context injection even if not needed",
+                        "default": False,
+                    },
+                },
+                "additionalProperties": False,
+            },
+        ),
     ]
 
 
@@ -430,6 +451,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.Text
 
         elif name == "record_conversation_message":
             return wrap_result(await handle_conversation_message(arguments), name)
+
+        elif name == "get_smart_context":
+            return wrap_result(await retrieval_tools.get_smart_context(arguments), name)
 
         else:
             raise ValueError(f"Unknown tool: {name}")
