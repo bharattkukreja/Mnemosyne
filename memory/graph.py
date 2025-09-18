@@ -184,7 +184,7 @@ class KnowledgeGraph:
             f.directory = $directory,
             f.extension = $extension,
             f.created_at = coalesce(f.created_at, datetime())
-        
+        WITH f
         MATCH (m:Memory {id: $memory_id})
         MERGE (m)-[:RELATES_TO]->(f)
         """
@@ -203,7 +203,7 @@ class KnowledgeGraph:
         query = """
         MERGE (t:Tag {name: $tag})
         SET t.created_at = coalesce(t.created_at, datetime())
-        
+        WITH t
         MATCH (m:Memory {id: $memory_id})
         MERGE (m)-[:TAGGED_WITH]->(t)
         """
@@ -219,7 +219,7 @@ class KnowledgeGraph:
         query = """
         MERGE (c:Conversation {id: $conversation_id})
         SET c.created_at = coalesce(c.created_at, datetime())
-        
+        WITH c
         MATCH (m:Memory {id: $memory_id})
         MERGE (c)-[:CONTAINS]->(m)
         """
@@ -235,7 +235,7 @@ class KnowledgeGraph:
         query = """
         MERGE (d:Developer {id: $developer_id})
         SET d.created_at = coalesce(d.created_at, datetime())
-        
+        WITH d
         MATCH (m:Memory {id: $memory_id})
         MERGE (d)-[:AUTHORED]->(m)
         """
