@@ -207,14 +207,9 @@ class AutoTrigger:
         self.recent_changes[change.file_path] = change.timestamp
 
         try:
-            # Get conversation context around the time of change
-            context_messages = self.conversation_tracker.get_messages_around_time(
-                change.timestamp, window_minutes=5
-            )
-
-            if not context_messages:
-                # Fallback to recent messages if no time-based context
-                context_messages = self.conversation_tracker.get_recent_messages(count=10)
+            # Get conversation context based on recent message count instead of time
+            # Changed from time-based (5 minutes) to message-count-based (7 messages)
+            context_messages = self.conversation_tracker.get_recent_messages(count=7)
 
             if len(context_messages) < 2:
                 logger.debug(f"Insufficient context for {change.file_path} - skipping")

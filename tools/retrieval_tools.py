@@ -240,7 +240,9 @@ class RetrievalTools:
             if should_inject:
                 # If forced, bypass the auto_trigger and generate injection directly
                 if force_inject:
-                    injection_result = await self.smart_injector.generate_auto_injection(session, all_memories)
+                    injection_result = await self.smart_injector.generate_auto_injection(
+                        session, all_memories
+                    )
                     if injection_result:
                         return [
                             types.TextContent(

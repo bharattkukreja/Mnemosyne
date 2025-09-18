@@ -467,8 +467,23 @@ async def main():
     """Run the MCP server"""
     logger.info("Starting Mnemosyne MCP Server...")
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    # Start auto-recording when server starts
+    try:
+        await auto_trigger.start_watching()
+        logger.info("✅ Auto-recording started - watching for code changes")
+    except Exception as e:
+        logger.warning(f"⚠️ Auto-recording failed to start: {e}")
+
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, server.create_initialization_options())
+    finally:
+        # Clean up auto-trigger on shutdown
+        try:
+            auto_trigger.stop_watching()
+            logger.info("Auto-recording stopped")
+        except:
+            pass
 
 
 if __name__ == "__main__":
