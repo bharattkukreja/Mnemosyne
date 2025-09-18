@@ -1,10 +1,10 @@
 """Configuration management for Mnemosyne"""
 
 import os
-import yaml
-from pathlib import Path
-from typing import Dict, Any
 from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
 
 
 @dataclass
@@ -13,7 +13,7 @@ class MCPConfig:
     version: str
 
 
-@dataclass 
+@dataclass
 class StorageConfig:
     vector_db: str
     vector_db_path: str
@@ -53,37 +53,34 @@ class Config:
 
 def load_config(config_path: str = "config.yaml") -> Config:
     """Load configuration from YAML file"""
-    
+
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
-    
-    with open(config_path, 'r') as f:
+
+    with open(config_path, "r") as f:
         config_data = yaml.safe_load(f)
-    
+
     # Expand paths with ~ to home directory
-    storage_data = config_data['storage'].copy()
-    storage_data['vector_db_path'] = os.path.expanduser(storage_data['vector_db_path'])
-    
-    logging_data = config_data['logging'].copy()
-    logging_data['path'] = os.path.expanduser(logging_data['path'])
-    
+    storage_data = config_data["storage"].copy()
+    storage_data["vector_db_path"] = os.path.expanduser(storage_data["vector_db_path"])
+
+    logging_data = config_data["logging"].copy()
+    logging_data["path"] = os.path.expanduser(logging_data["path"])
+
     return Config(
-        mcp=MCPConfig(**config_data['mcp']),
+        mcp=MCPConfig(**config_data["mcp"]),
         storage=StorageConfig(**storage_data),
-        embeddings=EmbeddingsConfig(**config_data['embeddings']),
-        context=ContextConfig(**config_data['context']),
-        logging=LoggingConfig(**logging_data)
+        embeddings=EmbeddingsConfig(**config_data["embeddings"]),
+        context=ContextConfig(**config_data["context"]),
+        logging=LoggingConfig(**logging_data),
     )
 
 
 def ensure_directories(config: Config) -> None:
     """Create necessary directories if they don't exist"""
-    
-    directories = [
-        os.path.dirname(config.storage.vector_db_path),
-        config.logging.path
-    ]
-    
+
+    directories = [os.path.dirname(config.storage.vector_db_path), config.logging.path]
+
     for directory in directories:
         if directory:
             Path(directory).mkdir(parents=True, exist_ok=True)

@@ -13,6 +13,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from config import ensure_directories, load_config
+from memory.auto_trigger import AutoTrigger, MCPConversationIntegration
 from tools.file_tools import FileTools
 from tools.graph_tools import GraphTools
 from tools.retrieval_tools import RetrievalTools
@@ -37,6 +38,10 @@ store_tools = StoreTools(config)
 retrieval_tools = RetrievalTools(config)
 file_tools = FileTools(config)
 graph_tools = GraphTools(config)
+
+# Initialize auto-trigger system
+auto_trigger = AutoTrigger(config)
+conversation_integration = MCPConversationIntegration(auto_trigger)
 
 # Create the MCP server
 server = Server("mnemosyne")
@@ -228,7 +233,142 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["filepath"],
             },
         ),
+        types.Tool(
+            name="associate_code_context",
+            description="Associate code changes with conversation context (automatically called after edits)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the file that was edited",
+                    },
+                    "edit_summary": {
+                        "type": "string",
+                        "description": "Summary of what was changed in the file",
+                    },
+                    "conversation_messages": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of conversation messages leading to this edit",
+                    },
+                    "edit_position": {
+                        "type": "integer",
+                        "description": "Index of message where edit occurred",
+                        "default": -1,
+                    },
+                    "edit_type": {
+                        "type": "string",
+                        "enum": ["create", "modify", "delete"],
+                        "description": "Type of edit performed",
+                        "default": "modify",
+                    },
+                    "lines_changed": {
+                        "type": "integer",
+                        "description": "Number of lines changed",
+                    },
+                    "context_window": {
+                        "type": "integer",
+                        "description": "Number of messages before/after to include in context",
+                        "default": 3,
+                    },
+                },
+                "required": ["file_path", "edit_summary", "conversation_messages"],
+            },
+        ),
+        types.Tool(
+            name="start_auto_recording",
+            description="Start automatic recording of code changes with conversation context",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "directory": {
+                        "type": "string",
+                        "description": "Directory to watch for file changes (defaults to current directory)",
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Enable or disable auto-recording",
+                        "default": True,
+                    },
+                },
+                "additionalProperties": False,
+            },
+        ),
+        types.Tool(
+            name="record_conversation_message",
+            description="Record a conversation message for context (used internally)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "The conversation message content",
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": ["user", "assistant", "system"],
+                        "description": "Source of the message",
+                    },
+                    "tool_calls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of tool calls in this message",
+                        "default": [],
+                    },
+                },
+                "required": ["message", "source"],
+            },
+        ),
     ]
+
+
+async def handle_auto_recording(arguments: dict[str, Any]) -> str:
+    """Handle auto-recording control"""
+    try:
+        directory = arguments.get("directory")
+        enabled = arguments.get("enabled", True)
+
+        auto_trigger.enabled = enabled
+
+        if enabled:
+            await auto_trigger.start_watching(directory)
+            watch_dir = directory or "current directory"
+            return (
+                f"✅ Auto-recording started!\n\n"
+                f"**Watching:** {watch_dir}\n"
+                f"**Status:** Enabled\n"
+                f"**Tracking:** Code changes will be automatically associated with conversation context"
+            )
+        else:
+            auto_trigger.stop_watching()
+            return "⏸️ Auto-recording disabled"
+
+    except Exception as e:
+        logger.error(f"Auto-recording control failed: {e}")
+        return f"❌ Failed to control auto-recording: {str(e)}"
+
+
+async def handle_conversation_message(arguments: dict[str, Any]) -> str:
+    """Handle conversation message recording"""
+    try:
+        message = arguments["message"]
+        source = arguments["source"]
+        tool_calls = arguments.get("tool_calls", [])
+
+        conversation_integration.on_user_message(
+            message
+        ) if source == "user" else conversation_integration.on_assistant_message(
+            message, tool_calls
+        ) if source == "assistant" else auto_trigger.add_conversation_message(
+            message, source, tool_calls
+        )
+
+        return f"📝 Recorded {source} message for context tracking"
+
+    except Exception as e:
+        logger.error(f"Conversation message recording failed: {e}")
+        return f"❌ Failed to record message: {str(e)}"
 
 
 def wrap_result(result: Any, tool_name: str) -> list[types.TextContent]:
@@ -250,6 +390,9 @@ def wrap_result(result: Any, tool_name: str) -> list[types.TextContent]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
     """Handle tool calls with real implementations"""
+
+    # Track tool calls for conversation context
+    conversation_integration.on_tool_call(name, arguments)
 
     try:
         if name == "store_decision":
@@ -278,6 +421,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.Text
 
         elif name == "trace_file_evolution":
             return wrap_result(await graph_tools.trace_file_evolution(arguments), name)
+
+        elif name == "associate_code_context":
+            return wrap_result(await store_tools.associate_code_context(arguments), name)
+
+        elif name == "start_auto_recording":
+            return wrap_result(await handle_auto_recording(arguments), name)
+
+        elif name == "record_conversation_message":
+            return wrap_result(await handle_conversation_message(arguments), name)
 
         else:
             raise ValueError(f"Unknown tool: {name}")

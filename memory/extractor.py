@@ -5,7 +5,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from .models import Decision, Todo, Memory
+from .models import Decision, Todo, Memory, CodeContext
 
 logger = logging.getLogger(__name__)
 
@@ -333,3 +333,79 @@ class ConversationExtractor:
                 unique_memories.append(memory)
         
         return unique_memories
+
+    def extract_code_context(
+        self,
+        conversation_messages: List[str],
+        edit_position: int,
+        file_path: str,
+        edit_summary: str,
+        edit_type: str = "modify",
+        lines_changed: Optional[int] = None,
+        context_window: int = 3
+    ) -> CodeContext:
+        """Extract conversation context around a code edit
+
+        Args:
+            conversation_messages: List of conversation messages
+            edit_position: Index of message where code edit occurred
+            file_path: Path to the file that was edited
+            edit_summary: Summary of what was changed
+            edit_type: Type of edit (create, modify, delete)
+            lines_changed: Number of lines changed
+            context_window: Number of messages before/after to include
+        """
+
+        # Extract context window around the edit
+        start_idx = max(0, edit_position - context_window)
+        end_idx = min(len(conversation_messages), edit_position + context_window + 1)
+
+        context_messages = conversation_messages[start_idx:end_idx]
+
+        # Join messages into conversation context
+        conversation_context = "\n\n".join([
+            f"Message {start_idx + i}: {msg}"
+            for i, msg in enumerate(context_messages)
+        ])
+
+        # Extract relevant information from context
+        decisions_mentioned = self._find_decision_references(conversation_context)
+        file_references = self._extract_file_references(conversation_context)
+        tags = self._extract_tags(conversation_context, edit_summary)
+
+        # Add file-specific tags
+        if file_path.endswith('.py'):
+            tags.append('python')
+        elif file_path.endswith(('.js', '.ts', '.jsx', '.tsx')):
+            tags.append('javascript')
+        elif file_path.endswith('.go'):
+            tags.append('golang')
+
+        # Add edit type tag
+        tags.append(f'edit-{edit_type}')
+
+        return CodeContext(
+            file_path=file_path,
+            edit_summary=edit_summary,
+            conversation_context=conversation_context,
+            edit_type=edit_type,
+            lines_changed=lines_changed,
+            files=[file_path] + file_references,
+            tags=tags
+        )
+
+    def _find_decision_references(self, text: str) -> List[str]:
+        """Find references to decisions or choices in text"""
+        decision_refs = []
+
+        patterns = [
+            r"(?:decided|chose|picked|selected|going with)\s+([^.!?\n]{5,50})",
+            r"(?:because|since|reason)\s+([^.!?\n]{10,100})",
+            r"(?:alternative|option|approach):\s*([^.!?\n]{5,50})"
+        ]
+
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            decision_refs.extend(matches)
+
+        return [ref.strip() for ref in decision_refs if len(ref.strip()) > 5]
