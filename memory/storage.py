@@ -271,6 +271,98 @@ class MemoryStorage:
 
         return None
 
+    def get_all_memories(self) -> List[SearchResult]:
+        """Get all stored memories for context analysis"""
+        try:
+            if self.storage_type == "chromadb":
+                return self._get_all_chromadb()
+            else:
+                return self._get_all_file()
+        except Exception as e:
+            logger.error(f"Failed to get all memories: {e}")
+            return []
+
+    def _get_all_chromadb(self) -> List[SearchResult]:
+        """Get all memories from ChromaDB"""
+        try:
+            # Get all documents from collection
+            result = self.collection.get(include=["documents", "metadatas", "embeddings"])
+
+            memories = []
+            for i, doc in enumerate(result["documents"]):
+                metadata = result["metadatas"][i] if result["metadatas"] else {}
+
+                # Parse document format: "content | reasoning"
+                parts = doc.split(" | ", 1)
+                content = parts[0]
+                reasoning = parts[1] if len(parts) > 1 else ""
+
+                # Parse JSON stored metadata
+                try:
+                    files = json.loads(metadata.get("files", "[]")) if metadata.get("files") else []
+                except:
+                    files = []
+
+                try:
+                    tags = json.loads(metadata.get("tags", "[]")) if metadata.get("tags") else []
+                except:
+                    tags = []
+
+                # Reconstruct memory from metadata
+                memory = Memory(
+                    id=result["ids"][i] if result["ids"] else f"mem_{i}",
+                    type=metadata.get("type", "unknown"),
+                    content=content,
+                    reasoning=reasoning,
+                    files=files,
+                    tags=tags,
+                    timestamp=datetime.fromisoformat(metadata.get("timestamp", datetime.now().isoformat())),
+                    author=metadata.get("author", "unknown")
+                )
+
+                # Create SearchResult with neutral relevance score
+                search_result = SearchResult(
+                    memory=memory,
+                    similarity_score=0.5,  # Neutral score for all memories
+                    relevance_score=0.5
+                )
+                memories.append(search_result)
+
+            return memories
+
+        except Exception as e:
+            logger.error(f"Failed to get all memories from ChromaDB: {e}")
+            return []
+
+    def _get_all_file(self) -> List[SearchResult]:
+        """Get all memories from file storage"""
+        try:
+            storage_dir = Path(self.config.storage.vector_db_path)
+            memories = []
+
+            for file_path in storage_dir.glob("*.json"):
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+
+                    memory = Memory(**data)
+                    search_result = SearchResult(
+                        memory=memory,
+                        similarity_score=0.5,  # Neutral score
+                        relevance_score=0.5
+                    )
+                    memories.append(search_result)
+
+                except Exception as e:
+                    logger.warning(f"Failed to load memory from {file_path}: {e}")
+                    continue
+
+            return memories
+
+        except Exception as e:
+            logger.error(f"Failed to get all memories from file storage: {e}")
+            return []
+
     def get_related_memories(self, memory_id: str, max_depth: int = 2) -> List[Dict[str, Any]]:
         """Get memories related through knowledge graph relationships"""
         return self.knowledge_graph.find_related_memories(memory_id, max_depth)

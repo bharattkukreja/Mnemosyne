@@ -30,7 +30,7 @@ class RetrievalTools:
         config_dict = {
             "auto_inject_max_tokens": 800,
             "auto_inject_confidence": 0.7,
-            "min_context_efficiency": 0.5,
+            "min_context_efficiency": 0.01,  # Lower threshold for demo
         }
         self.smart_injector = SmartContextInjector(config_dict)
         self.auto_trigger = AutoInjectionTrigger(self.smart_injector)
@@ -238,14 +238,25 @@ class RetrievalTools:
             )
 
             if should_inject:
-                smart_context = await self.auto_trigger.trigger_injection(session, all_memories)
-                if smart_context:
-                    return [
-                        types.TextContent(
-                            type="text",
-                            text=f"🚀 **Smart Context Ready**\n\n{smart_context}\n\n💡 *Optimized context using {len(smart_context.split()) * 1.3:.0f} tokens. This replaces having to manually search through {len(all_memories)} stored memories.*",
-                        )
-                    ]
+                # If forced, bypass the auto_trigger and generate injection directly
+                if force_inject:
+                    injection_result = await self.smart_injector.generate_auto_injection(session, all_memories)
+                    if injection_result:
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"🚀 **Smart Context Ready** (Forced)\n\n{injection_result.injected_context}\n\n💡 *Optimized context using {injection_result.token_count} tokens. This replaces having to manually search through {len(all_memories)} stored memories.*",
+                            )
+                        ]
+                else:
+                    smart_context = await self.auto_trigger.trigger_injection(session, all_memories)
+                    if smart_context:
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"🚀 **Smart Context Ready**\n\n{smart_context}\n\n💡 *Optimized context using {len(smart_context.split()) * 1.3:.0f} tokens. This replaces having to manually search through {len(all_memories)} stored memories.*",
+                            )
+                        ]
 
             # No injection needed
             recent_count = len(

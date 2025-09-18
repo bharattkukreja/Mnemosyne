@@ -142,7 +142,8 @@ class SmartContextInjector:
         scored_memories = self.relevance_scorer.score_memories(all_memories, query_context)
 
         # Filter for high relevance only (save tokens)
-        high_relevance = [m for m in scored_memories if m.relevance_score > 0.6]
+        # Lower threshold for force injection scenarios
+        high_relevance = [m for m in scored_memories if m.relevance_score > 0.4]
 
         return high_relevance[:15]  # Limit candidates
 
