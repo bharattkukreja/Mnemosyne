@@ -1,0 +1,35 @@
+# Mnemosyne Memory Layer - Cursor Rules
+
+## MCP Tool Usage Priority
+When the user requests any of these actions, ALWAYS call the corresponding MCP tool directly instead of explaining it:
+
+### Memory Retrieval Commands
+- "get_smart_context" or "smart context" → Call get_smart_context MCP tool
+- "search_memory" or "search" → Call search_memory MCP tool
+- "get_session_context" or "session context" → Call get_session_context MCP tool
+- "get_file_history" → Call get_file_history MCP tool
+
+### Memory Storage Commands
+- "store_decision" → Call store_decision MCP tool
+- "store_todo" → Call store_todo MCP tool
+
+### Graph Analysis Commands
+- "explore_relationships" → Call explore_relationships MCP tool
+- "analyze_decision_impact" → Call analyze_decision_impact MCP tool
+- "discover_patterns" → Call discover_patterns MCP tool
+- "trace_file_evolution" → Call trace_file_evolution MCP tool
+
+## Smart Context Behavior
+- When user says "get_smart_context(forced=True)" or similar → Call get_smart_context with force: true
+- When user opens files or starts coding → Proactively suggest calling get_smart_context
+- Never explain what these tools do unless explicitly asked "what does X do?"
+
+## Auto-Recording
+- The system automatically captures decisions and context
+- Encourage users to make explicit decisions that will be stored
+- When major architectural choices are discussed, suggest storing them
+
+## Response Style
+- Be concise and action-oriented
+- Focus on executing tools rather than explaining them
+- Show results from MCP calls directly to the user
