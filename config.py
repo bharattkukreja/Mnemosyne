@@ -17,6 +17,7 @@ class MCPConfig:
 class StorageConfig:
     vector_db: str
     vector_db_path: str
+    session_db_path: str
     graph_db: str
     neo4j_uri: str
     neo4j_user: str
@@ -37,6 +38,36 @@ class ContextConfig:
 
 
 @dataclass
+class SessionTrackingConfig:
+    boundary_time_threshold: int
+    file_continuity_threshold: float
+    max_session_duration: int
+
+
+@dataclass
+class SummarizationConfig:
+    immediate_window: int
+    recent_window: int
+    compression_ratio: float
+
+
+@dataclass
+class InjectionConfig:
+    auto_inject_max_tokens: int
+    auto_inject_confidence: float
+    min_context_efficiency: float
+    adaptive_thresholds: bool
+    injection_cooldown_minutes: int
+
+
+@dataclass
+class SmartContextConfig:
+    session_tracking: SessionTrackingConfig
+    summarization: SummarizationConfig
+    injection: InjectionConfig
+
+
+@dataclass
 class LoggingConfig:
     level: str
     path: str
@@ -48,6 +79,7 @@ class Config:
     storage: StorageConfig
     embeddings: EmbeddingsConfig
     context: ContextConfig
+    smart_context: SmartContextConfig
     logging: LoggingConfig
 
 
@@ -63,15 +95,25 @@ def load_config(config_path: str = "config.yaml") -> Config:
     # Expand paths with ~ to home directory
     storage_data = config_data["storage"].copy()
     storage_data["vector_db_path"] = os.path.expanduser(storage_data["vector_db_path"])
+    storage_data["session_db_path"] = os.path.expanduser(storage_data["session_db_path"])
 
     logging_data = config_data["logging"].copy()
     logging_data["path"] = os.path.expanduser(logging_data["path"])
+
+    # Parse smart_context nested structure
+    smart_context_data = config_data["smart_context"]
+    smart_context = SmartContextConfig(
+        session_tracking=SessionTrackingConfig(**smart_context_data["session_tracking"]),
+        summarization=SummarizationConfig(**smart_context_data["summarization"]),
+        injection=InjectionConfig(**smart_context_data["injection"])
+    )
 
     return Config(
         mcp=MCPConfig(**config_data["mcp"]),
         storage=StorageConfig(**storage_data),
         embeddings=EmbeddingsConfig(**config_data["embeddings"]),
         context=ContextConfig(**config_data["context"]),
+        smart_context=smart_context,
         logging=LoggingConfig(**logging_data),
     )
 
@@ -79,7 +121,11 @@ def load_config(config_path: str = "config.yaml") -> Config:
 def ensure_directories(config: Config) -> None:
     """Create necessary directories if they don't exist"""
 
-    directories = [os.path.dirname(config.storage.vector_db_path), config.logging.path]
+    directories = [
+        os.path.dirname(config.storage.vector_db_path),
+        os.path.dirname(config.storage.session_db_path),
+        config.logging.path
+    ]
 
     for directory in directories:
         if directory:

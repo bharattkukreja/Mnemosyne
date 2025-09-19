@@ -26,13 +26,20 @@ class RetrievalTools:
         self.relevance_scorer = RelevanceScorer()
         self.context_compressor = ContextCompressor(config.context.max_injection_tokens)
 
-        # Initialize smart context injection
+        # Initialize smart context injection with session tracking
+        session_db_path = config.storage.session_db_path
+
+        # Build config dict from structured config
         config_dict = {
-            "auto_inject_max_tokens": 800,
-            "auto_inject_confidence": 0.7,
-            "min_context_efficiency": 0.01,  # Lower threshold for demo
+            "auto_inject_max_tokens": config.smart_context.injection.auto_inject_max_tokens,
+            "auto_inject_confidence": config.smart_context.injection.auto_inject_confidence,
+            "min_context_efficiency": config.smart_context.injection.min_context_efficiency,
+            "boundary_time_threshold": config.smart_context.session_tracking.boundary_time_threshold,
+            "file_continuity_threshold": config.smart_context.session_tracking.file_continuity_threshold,
+            "max_session_duration": config.smart_context.session_tracking.max_session_duration,
         }
-        self.smart_injector = SmartContextInjector(config_dict)
+
+        self.smart_injector = SmartContextInjector(config_dict, session_db_path, self.storage)
         self.auto_trigger = AutoInjectionTrigger(self.smart_injector)
 
     async def search_memory(self, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
@@ -241,13 +248,20 @@ class RetrievalTools:
                 # If forced, bypass the auto_trigger and generate injection directly
                 if force_inject:
                     injection_result = await self.smart_injector.generate_auto_injection(
-                        session, all_memories
+                        session, all_memories, force=True
                     )
                     if injection_result:
                         return [
                             types.TextContent(
                                 type="text",
                                 text=f"🚀 **Smart Context Ready** (Forced)\n\n{injection_result.injected_context}\n\n💡 *Optimized context using {injection_result.token_count} tokens. This replaces having to manually search through {len(all_memories)} stored memories.*",
+                            )
+                        ]
+                    else:
+                        return [
+                            types.TextContent(
+                                type="text",
+                                text=f"⚠️ **Force injection failed**\n\nDEBUG: all_memories count: {len(all_memories)}\nCurrent files: {current_files}\nWorking dir: {str(Path.cwd())}\nBranch: {self._get_current_git_branch()}",
                             )
                         ]
                 else:

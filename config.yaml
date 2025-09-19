@@ -5,6 +5,7 @@ mcp:
 storage:
   vector_db: "chromadb"
   vector_db_path: "~/.mnemosyne/chroma"
+  session_db_path: "~/.mnemosyne/sessions.db"
   graph_db: "neo4j"
   neo4j_uri: "bolt://localhost:7687"
   neo4j_user: "neo4j"
@@ -18,6 +19,24 @@ context:
   max_injection_tokens: 2000
   relevance_threshold: 0.7
   max_memories_per_query: 10
+
+smart_context:
+  session_tracking:
+    boundary_time_threshold: 1800  # 30 minutes
+    file_continuity_threshold: 0.7
+    max_session_duration: 14400   # 4 hours
+
+  summarization:
+    immediate_window: 7200    # 2 hours
+    recent_window: 86400      # 24 hours
+    compression_ratio: 0.3    # compress to 30% of original
+
+  injection:
+    auto_inject_max_tokens: 500
+    auto_inject_confidence: 0.6  # Lower threshold for better context preservation
+    min_context_efficiency: 0.01
+    adaptive_thresholds: true
+    injection_cooldown_minutes: 15
 
 logging:
   level: "INFO"
