@@ -139,7 +139,11 @@ class DatabaseExplorer:
         """Show ChromaDB data as a table"""
         table_data = []
 
-        for i, (id, doc, meta) in enumerate(zip(results['ids'], results['documents'], results['metadatas'])):
+        # Zip and sort by timestamp (newest first)
+        memory_data = list(zip(results['ids'], results['documents'], results['metadatas']))
+        memory_data.sort(key=lambda x: x[2].get('timestamp', ''), reverse=True)
+
+        for i, (id, doc, meta) in enumerate(memory_data):
             files = json.loads(meta.get('files', '[]'))
             tags = json.loads(meta.get('tags', '[]'))
 
@@ -158,7 +162,11 @@ class DatabaseExplorer:
 
     def _show_chromadb_detailed(self, results):
         """Show detailed ChromaDB data"""
-        for i, (id, doc, meta) in enumerate(zip(results['ids'], results['documents'], results['metadatas'])):
+        # Zip and sort by timestamp (newest first), including embeddings
+        memory_data = list(zip(results['ids'], results['documents'], results['metadatas'], results['embeddings']))
+        memory_data.sort(key=lambda x: x[2].get('timestamp', ''), reverse=True)
+
+        for i, (id, doc, meta, embedding) in enumerate(memory_data):
             files = json.loads(meta.get('files', '[]'))
             tags = json.loads(meta.get('tags', '[]'))
 
@@ -169,7 +177,7 @@ class DatabaseExplorer:
             print(f"📁 Files: {files}")
             print(f"🏷️  Tags: {tags}")
             print(f"⏰ Time: {meta.get('timestamp', 'unknown')}")
-            print(f"🧮 Embedding: {len(results['embeddings'][i])} dimensions")
+            print(f"🧮 Embedding: {len(embedding)} dimensions")
             print("-" * 60)
 
             if i < len(results['ids']) - 1:
