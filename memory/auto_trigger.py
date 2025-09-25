@@ -211,9 +211,12 @@ class AutoTrigger:
             # Changed from time-based (5 minutes) to message-count-based (7 messages)
             context_messages = self.conversation_tracker.get_recent_messages(count=7)
 
+            # If no explicit conversation context, infer context from file changes
             if len(context_messages) < 2:
-                logger.debug(f"Insufficient context for {change.file_path} - skipping")
-                return
+                context_messages = await self._infer_context_from_changes(change)
+                if not context_messages:
+                    logger.debug(f"No context available for {change.file_path} - skipping")
+                    return
 
             # Generate edit summary based on file and change type
             edit_summary = self._generate_edit_summary(change)
@@ -277,6 +280,62 @@ class AutoTrigger:
 
         except Exception:
             return None
+
+    async def _infer_context_from_changes(self, change: FileChange) -> List[str]:
+        """Infer conversation context when no explicit messages are available"""
+        try:
+            file_path = Path(change.file_path)
+            context_messages = []
+
+            # Add file change context
+            context_messages.append(f"system: File change detected - {change.change_type} {file_path.name}")
+
+            # Try to extract content insights for created/modified files
+            if change.change_type in ["created", "modified"] and file_path.exists():
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+
+                    # Extract meaningful context from file content
+                    if len(content) > 0:
+                        # For small files, include a snippet
+                        if len(content) < 500:
+                            context_messages.append(f"assistant: Working with file content: {content[:200]}...")
+                        else:
+                            # Extract function/class names or other structural elements
+                            lines = content.split('\n')
+                            key_lines = []
+                            for line in lines[:20]:  # Check first 20 lines
+                                stripped = line.strip()
+                                if any(keyword in stripped for keyword in ['def ', 'class ', 'function ', 'const ', 'let ', 'var ', 'import ', 'from ', 'export']):
+                                    key_lines.append(stripped)
+
+                            if key_lines:
+                                context_messages.append(f"assistant: Code structure detected: {'; '.join(key_lines[:3])}")
+
+                except Exception as e:
+                    logger.debug(f"Could not read file content for context: {e}")
+
+            # Try to get git context if available
+            try:
+                import subprocess
+                git_log = subprocess.run(
+                    ['git', 'log', '--oneline', '-5'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if git_log.returncode == 0:
+                    recent_commits = git_log.stdout.strip().split('\n')[:2]
+                    for commit in recent_commits:
+                        if commit.strip():
+                            context_messages.append(f"system: Recent git activity: {commit}")
+            except:
+                pass  # Git not available or other error
+
+            return context_messages if len(context_messages) >= 2 else []
+
+        except Exception as e:
+            logger.error(f"Failed to infer context from changes: {e}")
+            return []
 
 
 class MCPConversationIntegration:

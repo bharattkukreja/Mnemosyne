@@ -20,7 +20,7 @@ from tools.retrieval_tools import RetrievalTools
 from tools.store_tools import StoreTools
 
 # Configure logging early
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("mnemosyne")
 
 # Load configuration
@@ -234,49 +234,6 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="associate_code_context",
-            description="Associate code changes with conversation context (automatically called after edits)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "Path to the file that was edited",
-                    },
-                    "edit_summary": {
-                        "type": "string",
-                        "description": "Summary of what was changed in the file",
-                    },
-                    "conversation_messages": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of conversation messages leading to this edit",
-                    },
-                    "edit_position": {
-                        "type": "integer",
-                        "description": "Index of message where edit occurred",
-                        "default": -1,
-                    },
-                    "edit_type": {
-                        "type": "string",
-                        "enum": ["create", "modify", "delete"],
-                        "description": "Type of edit performed",
-                        "default": "modify",
-                    },
-                    "lines_changed": {
-                        "type": "integer",
-                        "description": "Number of lines changed",
-                    },
-                    "context_window": {
-                        "type": "integer",
-                        "description": "Number of messages before/after to include in context",
-                        "default": 3,
-                    },
-                },
-                "required": ["file_path", "edit_summary", "conversation_messages"],
-            },
-        ),
-        types.Tool(
             name="start_auto_recording",
             description="Start automatic recording of code changes with conversation context",
             inputSchema={
@@ -443,8 +400,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.Text
         elif name == "trace_file_evolution":
             return wrap_result(await graph_tools.trace_file_evolution(arguments), name)
 
-        elif name == "associate_code_context":
-            return wrap_result(await store_tools.associate_code_context(arguments), name)
 
         elif name == "start_auto_recording":
             return wrap_result(await handle_auto_recording(arguments), name)
@@ -471,8 +426,14 @@ async def main():
     try:
         await auto_trigger.start_watching()
         logger.info("✅ Auto-recording started - watching for code changes")
+        logger.info(f"📁 Watching directory: {auto_trigger.watch_directory}")
+        logger.info(f"🔧 Observer status: {'Active' if auto_trigger.observer else 'None'}")
     except Exception as e:
-        logger.warning(f"⚠️ Auto-recording failed to start: {e}")
+        logger.error(f"❌ Auto-recording failed to start: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        # Don't fail server startup just because auto-recording failed
+        logger.warning("Server will continue without auto-recording")
 
     try:
         async with stdio_server() as (read_stream, write_stream):
@@ -481,9 +442,9 @@ async def main():
         # Clean up auto-trigger on shutdown
         try:
             auto_trigger.stop_watching()
-            logger.info("Auto-recording stopped")
-        except:
-            pass
+            logger.info("🛑 Auto-recording stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping auto-recording: {e}")
 
 
 if __name__ == "__main__":
