@@ -105,6 +105,25 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="update_todo_status",
+            description="Update the status of an existing TODO",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "todo_id": {
+                        "type": "string",
+                        "description": "ID of the TODO to update",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "in_progress", "completed", "obsolete"],
+                        "description": "New status for the TODO",
+                    },
+                },
+                "required": ["todo_id", "status"],
+            },
+        ),
+        types.Tool(
             name="search_memory",
             description="Search through stored memories",
             inputSchema={
@@ -397,6 +416,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.Text
 
         elif name == "store_todo":
             return wrap_result(await store_tools.store_todo(arguments), name)
+
+        elif name == "update_todo_status":
+            return wrap_result(await store_tools.update_todo_status(arguments), name)
 
         elif name == "search_memory":
             return wrap_result(await retrieval_tools.search_memory(arguments), name)

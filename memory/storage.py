@@ -464,3 +464,93 @@ class MemoryStorage:
         # Sort by timestamp for chronological order
         search_results.sort(key=lambda x: x.memory.timestamp)
         return search_results
+
+    def update_todo_status(self, todo_id: str, new_status: str) -> bool:
+        """Update the status of a TODO memory"""
+        try:
+            if self.storage_type == "chromadb":
+                return self._update_todo_status_chromadb(todo_id, new_status)
+            else:
+                return self._update_todo_status_file(todo_id, new_status)
+        except Exception as e:
+            logger.error(f"Failed to update TODO status: {e}")
+            return False
+
+    def _update_todo_status_chromadb(self, todo_id: str, new_status: str) -> bool:
+        """Update TODO status in ChromaDB"""
+        try:
+            # Get the existing memory
+            result = self.collection.get(ids=[todo_id])
+            if not result["ids"]:
+                return False
+
+            # Get current metadata
+            metadata = result["metadatas"][0]
+            document = result["documents"][0]
+
+            # Check if it's a TODO
+            if metadata.get("type") != "todo":
+                logger.warning(f"Memory {todo_id} is not a TODO")
+                return False
+
+            # Update metadata with new status
+            updated_metadata = metadata.copy()
+            updated_metadata["status"] = new_status
+
+            # ChromaDB doesn't support updates, so we need to delete and re-add
+            self.collection.delete(ids=[todo_id])
+
+            # Re-add with updated metadata
+            embedding = result["embeddings"][0] if result.get("embeddings") else None
+            if embedding is None:
+                # Regenerate embedding if not available
+                embedding = self.embedding_generator.generate_embedding(document)
+
+            self.collection.add(
+                ids=[todo_id],
+                embeddings=[embedding],
+                metadatas=[updated_metadata],
+                documents=[document]
+            )
+
+            logger.info(f"Updated TODO {todo_id} status to {new_status}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update TODO in ChromaDB: {e}")
+            return False
+
+    def _update_todo_status_file(self, todo_id: str, new_status: str) -> bool:
+        """Update TODO status in file storage"""
+        try:
+            if not self.memories_file.exists():
+                return False
+
+            updated_lines = []
+            found = False
+
+            # Read all lines and update the matching TODO
+            with open(self.memories_file, "r") as f:
+                for line in f:
+                    try:
+                        data = json.loads(line.strip())
+                        if data.get("id") == todo_id and data.get("type") == "todo":
+                            data["status"] = new_status
+                            found = True
+                        updated_lines.append(json.dumps(data))
+                    except Exception:
+                        updated_lines.append(line.strip())
+
+            if found:
+                # Write back all lines
+                with open(self.memories_file, "w") as f:
+                    for line in updated_lines:
+                        f.write(line + "\n")
+                logger.info(f"Updated TODO {todo_id} status to {new_status}")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to update TODO in file storage: {e}")
+            return False

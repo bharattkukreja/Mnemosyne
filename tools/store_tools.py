@@ -114,3 +114,49 @@ class StoreTools:
                 )
             ]
 
+    async def update_todo_status(self, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
+        """Update the status of an existing TODO"""
+        try:
+            todo_id = arguments["todo_id"]
+            new_status = arguments["status"]
+
+            # Validate status
+            valid_statuses = ["pending", "in_progress", "completed", "obsolete"]
+            if new_status not in valid_statuses:
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"❌ Invalid status. Must be one of: {', '.join(valid_statuses)}"
+                    )
+                ]
+
+            # Update TODO status in storage
+            success = self.storage.update_todo_status(todo_id, new_status)
+
+            if success:
+                logger.info(f"Updated TODO {todo_id} status to {new_status}")
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"✅ TODO status updated successfully!\n\n"
+                             f"**ID:** {todo_id}\n"
+                             f"**New Status:** {new_status}"
+                    )
+                ]
+            else:
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"❌ TODO with ID {todo_id} not found"
+                    )
+                ]
+
+        except Exception as e:
+            logger.error(f"Failed to update TODO status: {e}")
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"❌ Failed to update TODO status: {str(e)}"
+                )
+            ]
+

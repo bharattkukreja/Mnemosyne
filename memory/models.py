@@ -39,7 +39,7 @@ class Todo(Memory):
     task: str
     priority: Literal["low", "medium", "high"] = "medium"
     context: str = ""
-    status: Literal["pending", "in_progress", "completed"] = "pending"
+    status: Literal["pending", "in_progress", "completed", "obsolete"] = "pending"
     
     def __init__(self, **data):
         if 'content' not in data and 'task' in data:

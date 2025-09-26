@@ -411,7 +411,10 @@ class RetrievalTools:
                     elif memory_type == 'code_context':
                         code_contexts.append(memory_info)
                     elif memory_type == 'todo':
-                        todos.append(memory_info)
+                        # Only include pending and in_progress TODOs
+                        status = meta.get('status', 'pending')
+                        if status in ['pending', 'in_progress']:
+                            todos.append(memory_info)
 
                 # Build context summary
                 context_lines = [
