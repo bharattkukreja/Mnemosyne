@@ -1,5 +1,6 @@
 """MCP tools for retrieving memories"""
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -26,20 +27,15 @@ class RetrievalTools:
         self.relevance_scorer = RelevanceScorer()
         self.context_compressor = ContextCompressor(config.context.max_injection_tokens)
 
-        # Initialize smart context injection with session tracking
-        session_db_path = config.storage.session_db_path
-
+        # Initialize smart context injection
         # Build config dict from structured config
         config_dict = {
             "auto_inject_max_tokens": config.smart_context.injection.auto_inject_max_tokens,
             "auto_inject_confidence": config.smart_context.injection.auto_inject_confidence,
             "min_context_efficiency": config.smart_context.injection.min_context_efficiency,
-            "boundary_time_threshold": config.smart_context.session_tracking.boundary_time_threshold,
-            "file_continuity_threshold": config.smart_context.session_tracking.file_continuity_threshold,
-            "max_session_duration": config.smart_context.session_tracking.max_session_duration,
         }
 
-        self.smart_injector = SmartContextInjector(config_dict, session_db_path, self.storage)
+        self.smart_injector = SmartContextInjector(config_dict, None, self.storage)
         self.auto_trigger = AutoInjectionTrigger(self.smart_injector)
 
     async def search_memory(self, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
@@ -353,3 +349,165 @@ class RetrievalTools:
 
         # Return first few files
         return common_files[:5]
+
+    async def get_past_context(self, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
+        """Get summary from recent conversations to continue where we left off"""
+        try:
+            max_tokens = arguments.get("max_tokens", 1500)
+            working_dir = arguments.get("working_dir", str(Path.cwd()))
+
+            # Get all memories from ChromaDB, sorted by timestamp
+            if self.storage.storage_type != "chromadb":
+                return [types.TextContent(
+                    type="text",
+                    text="❌ ChromaDB not available for past context retrieval"
+                )]
+
+            # Get recent memories (last 10-20) from ChromaDB
+            try:
+                results = self.storage.collection.get(include=['metadatas', 'documents'])
+
+                if not results['ids']:
+                    return [types.TextContent(
+                        type="text",
+                        text="📋 **No Previous Work Found**\n\nNo previous conversations found. Start coding and your decisions will be automatically captured!"
+                    )]
+
+                # Sort by timestamp (newest first) and get recent memories
+                memory_data = list(zip(results['ids'], results['documents'], results['metadatas']))
+                memory_data.sort(key=lambda x: x[2].get('timestamp', ''), reverse=True)
+
+                # Get last 10 memories for context
+                recent_memories = memory_data[:10]
+
+                # Categorize memories
+                decisions = []
+                code_contexts = []
+                todos = []
+                files_worked_on = set()
+
+                for memory_id, doc, meta in recent_memories:
+                    memory_type = meta.get('type', 'unknown')
+                    files = json.loads(meta.get('files', '[]')) if meta.get('files') else []
+                    files_worked_on.update(files)
+
+                    # Parse document format: "content | reasoning"
+                    parts = doc.split(" | ", 1)
+                    content = parts[0]
+                    reasoning = parts[1] if len(parts) > 1 else ""
+
+                    timestamp_str = meta.get('timestamp', '')
+                    timestamp = datetime.fromisoformat(timestamp_str) if timestamp_str else datetime.now()
+
+                    memory_info = {
+                        'content': content,
+                        'reasoning': reasoning,
+                        'files': files,
+                        'timestamp': timestamp
+                    }
+
+                    if memory_type == 'decision':
+                        decisions.append(memory_info)
+                    elif memory_type == 'code_context':
+                        code_contexts.append(memory_info)
+                    elif memory_type == 'todo':
+                        todos.append(memory_info)
+
+                # Build context summary
+                context_lines = [
+                    "📋 **Recent Work Summary**",
+                    f"**Based on {len(recent_memories)} recent memories**",
+                    ""
+                ]
+
+                # Add files worked on
+                if files_worked_on:
+                    context_lines.append(f"**Files Recently Worked On ({len(files_worked_on)}):**")
+                    for file_path in list(files_worked_on)[:8]:
+                        context_lines.append(f"• {file_path}")
+                    if len(files_worked_on) > 8:
+                        context_lines.append(f"• ...and {len(files_worked_on) - 8} more files")
+                    context_lines.append("")
+
+                # Add recent decisions
+                if decisions:
+                    context_lines.append(f"**Recent Decisions ({len(decisions)}):**")
+                    for i, decision in enumerate(decisions[:5], 1):
+                        context_lines.append(f"{i}. {decision['content']}")
+                        if decision['reasoning']:
+                            reasoning_preview = decision['reasoning'][:100]
+                            if len(decision['reasoning']) > 100:
+                                reasoning_preview += "..."
+                            context_lines.append(f"   *{reasoning_preview}*")
+                    if len(decisions) > 5:
+                        context_lines.append(f"   *...and {len(decisions) - 5} more decisions*")
+                    context_lines.append("")
+
+                # Add recent code contexts
+                if code_contexts:
+                    context_lines.append(f"**Recent Code Changes ({len(code_contexts)}):**")
+                    for i, ctx in enumerate(code_contexts[:3], 1):
+                        context_lines.append(f"{i}. {ctx['content']}")
+                        # Show file if available
+                        if ctx['files']:
+                            context_lines.append(f"   *Files: {', '.join(ctx['files'][:2])}*")
+                    if len(code_contexts) > 3:
+                        context_lines.append(f"   *...and {len(code_contexts) - 3} more changes*")
+                    context_lines.append("")
+
+                # Add recent TODOs
+                if todos:
+                    context_lines.append(f"**Recent TODOs ({len(todos)}):**")
+                    for i, todo in enumerate(todos[:3], 1):
+                        context_lines.append(f"{i}. {todo['content']}")
+                    if len(todos) > 3:
+                        context_lines.append(f"   *...and {len(todos) - 3} more TODOs*")
+                    context_lines.append("")
+
+                # Add continuation suggestions
+                context_lines.append("**💡 Continue where you left off:**")
+                if decisions:
+                    latest_decision = decisions[0]
+                    context_lines.append(f"• Latest decision: {latest_decision['content']}")
+                if files_worked_on:
+                    recent_files = list(files_worked_on)[:3]
+                    context_lines.append(f"• Recent files: {', '.join(recent_files)}")
+
+                full_context = "\n".join(context_lines)
+
+                # Simple token estimation and truncation if needed
+                estimated_tokens = len(full_context.split()) * 1.3
+                if estimated_tokens > max_tokens:
+                    # Truncate to fit token limit
+                    words = full_context.split()
+                    target_words = int(max_tokens / 1.3)
+                    truncated_words = words[:target_words]
+                    full_context = " ".join(truncated_words) + "\n\n*[Context truncated to fit token limit]*"
+
+                return [types.TextContent(type="text", text=full_context)]
+
+            except Exception as e:
+                logger.error(f"Error querying ChromaDB: {e}")
+                return [types.TextContent(
+                    type="text",
+                    text=f"❌ Error retrieving past context from ChromaDB: {str(e)}"
+                )]
+
+        except Exception as e:
+            logger.error(f"Failed to get past context: {e}")
+            return [types.TextContent(type="text", text=f"❌ Failed to get past context: {str(e)}")]
+
+    def _format_duration(self, session) -> str:
+        """Format session duration"""
+        if not session.end_time or not session.start_time:
+            return "Unknown duration"
+
+        duration = session.end_time - session.start_time
+        total_minutes = int(duration.total_seconds() / 60)
+
+        if total_minutes < 60:
+            return f"{total_minutes} minutes"
+        else:
+            hours = total_minutes // 60
+            minutes = total_minutes % 60
+            return f"{hours}h {minutes}m"

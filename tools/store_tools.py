@@ -14,11 +14,16 @@ logger = logging.getLogger(__name__)
 
 class StoreTools:
     """MCP tools for storing decisions and TODOs"""
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.storage = MemoryStorage(config)
         self.extractor = ConversationExtractor()
+        self._current_session_id = None
+
+    def set_current_session_id(self, session_id: str):
+        """Set the current session ID for linking memories"""
+        self._current_session_id = session_id
     
     async def store_decision(self, arguments: dict[str, Any]) -> Sequence[types.TextContent]:
         """Store an architectural or implementation decision"""
@@ -33,7 +38,8 @@ class StoreTools:
                 decision=decision,
                 reasoning=reasoning,
                 files=files,
-                tags=tags
+                tags=tags,
+                session_id=self._current_session_id
             )
             
             # Store in memory system
@@ -76,7 +82,8 @@ class StoreTools:
                 task=task,
                 context=context,
                 priority=priority,
-                files=files
+                files=files,
+                session_id=self._current_session_id
             )
             
             # Store in memory system

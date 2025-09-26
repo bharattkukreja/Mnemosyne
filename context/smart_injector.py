@@ -11,9 +11,6 @@ from typing import Any, Dict, List, Optional
 
 from context.compressor import ContextCompressor
 from context.relevance import RelevanceScorer
-from context.session_database import SessionDatabase
-from context.session_tracker import SessionTracker
-from context.summarizer import ContextSummarizer
 from memory.models import SearchResult
 
 logger = logging.getLogger(__name__)
@@ -46,26 +43,10 @@ class InjectionResult:
 class SmartContextInjector:
     """Automatically inject the most relevant context to save developer token usage"""
 
-    def __init__(
-        self, config: Dict[str, Any], session_db_path: Optional[str] = None, memory_storage=None
-    ):
+    def __init__(self, config: Dict[str, Any], session_db_path: Optional[str] = None, memory_storage=None):
         self.config = config
         self.relevance_scorer = RelevanceScorer()
         self.compressor = ContextCompressor()
-
-        # Initialize session tracking
-        if session_db_path:
-            self.session_db = SessionDatabase(session_db_path)
-            self.session_tracker = SessionTracker(config, self.session_db)
-            # Initialize summarizer
-            if memory_storage:
-                self.summarizer = ContextSummarizer(self.session_db, memory_storage)
-            else:
-                self.summarizer = None
-        else:
-            self.session_db = None
-            self.session_tracker = None
-            self.summarizer = None
 
         # Efficiency-focused settings
         self.max_auto_inject_tokens = config.get("auto_inject_max_tokens", 800)  # Conservative
@@ -74,34 +55,8 @@ class SmartContextInjector:
 
     async def detect_session_start(self, current_session: SessionContext) -> bool:
         """Detect if this is a new session that needs context injection"""
-
-        if not self.session_tracker:
-            # Fallback to simple time-based detection
-            return True
-
-        # Use session tracker for sophisticated boundary detection
-        boundary = self.session_tracker.detect_session_boundary(
-            current_files=current_session.current_files,
-            working_dir=current_session.working_directory,
-            git_branch=current_session.active_branch,
-        )
-
-        # Start tracking the current session
-        if boundary.should_inject_context:
-            session_id = self.session_tracker.start_new_session(
-                current_files=current_session.current_files,
-                working_dir=current_session.working_directory,
-                git_branch=current_session.active_branch,
-                git_commits=current_session.recent_commits,
-            )
-            logger.info(
-                f"New session detected: {boundary.boundary_type.value}, session_id: {session_id}"
-            )
-        else:
-            # Update existing session
-            self.session_tracker.update_current_session(current_session.current_files)
-
-        return boundary.should_inject_context
+        # Simple time-based detection - always inject context when requested
+        return True
 
     async def generate_auto_injection(
         self, session: SessionContext, all_memories: List[SearchResult], force: bool = False
@@ -147,11 +102,7 @@ class SmartContextInjector:
     ) -> List[SearchResult]:
         """Get memories most relevant to current session using hierarchical context"""
 
-        # If we have a summarizer, use hierarchical context
-        if self.summarizer:
-            return await self._get_hierarchical_context(session, all_memories)
-
-        # Fallback to original implementation
+        # Use simple relevance-based implementation
         query_context = {
             "current_files": session.current_files,
             "recent_commits": session.recent_commits,
@@ -170,63 +121,6 @@ class SmartContextInjector:
 
         return high_relevance[:15]  # Limit candidates
 
-    async def _get_hierarchical_context(
-        self, session: SessionContext, all_memories: List[SearchResult]
-    ) -> List[SearchResult]:
-        """Get context using hierarchical summarization"""
-
-        # Build context hierarchy based on current files
-        context_hierarchy = self.summarizer.build_context_hierarchy(session.current_files)
-
-        # Convert session summaries to pseudo-memories for processing
-        pseudo_memories = []
-
-        # Process immediate context (highest priority, full detail)
-        for summary in context_hierarchy.immediate:
-            pseudo_memory = self._create_pseudo_memory_from_summary(summary, priority=1.0)
-            pseudo_memories.append(pseudo_memory)
-
-        # Process recent context (medium priority, some compression)
-        for summary in context_hierarchy.recent:
-            pseudo_memory = self._create_pseudo_memory_from_summary(summary, priority=0.7)
-            pseudo_memories.append(pseudo_memory)
-
-        # Process historical context (low priority, highly compressed)
-        if len(pseudo_memories) < 10:  # Only include if we have token budget
-            for summary in context_hierarchy.historical[:3]:  # Limit historical items
-                pseudo_memory = self._create_pseudo_memory_from_summary(summary, priority=0.4)
-                pseudo_memories.append(pseudo_memory)
-
-        # Combine with actual memories from the current session timeframe
-        recent_memories = [
-            m
-            for m in all_memories
-            if (datetime.now() - m.memory.timestamp).total_seconds() < 7200  # Last 2 hours
-        ]
-
-        # Merge and prioritize
-        all_context = pseudo_memories + recent_memories
-        return sorted(all_context, key=lambda x: x.relevance_score, reverse=True)[:15]
-
-    def _create_pseudo_memory_from_summary(self, summary, priority: float):
-        """Create a pseudo SearchResult from a session summary"""
-        from memory.models import Memory, SearchResult
-
-        # Create a pseudo-memory that looks like a regular memory
-        pseudo_memory = Memory(
-            id=f"summary_{summary.session_id}",
-            type="session_summary",
-            content=summary.summary_text,
-            reasoning=f"Session summary from {summary.created_at.strftime('%H:%M')}",
-            files=summary.modified_files,
-            tags=[summary.level],
-            timestamp=summary.created_at,
-        )
-
-        # Create search result with priority-based relevance
-        return SearchResult(
-            memory=pseudo_memory, similarity_score=priority, relevance_score=priority
-        )
 
     async def _optimize_context_density(
         self, memories: List[SearchResult], session: SessionContext
@@ -290,16 +184,7 @@ class SmartContextInjector:
             overlap_ratio = file_overlap / len(current_files) if current_files else 0
             value += overlap_ratio * 1.0  # Strong boost for file relevance
 
-        # Session continuity boost (if we have session tracking)
-        if self.session_tracker and hasattr(memory.memory, "session_id"):
-            # Boost memories from recent sessions with high continuity scores
-            try:
-                session_continuity = self.session_tracker.get_session_continuity_score(
-                    memory.memory.session_id
-                )
-                value += session_continuity * 0.5
-            except:
-                pass
+        # Session continuity boost removed - using simple temporal scoring
 
         # Enhanced temporal scoring
         age_hours = (datetime.now() - memory.memory.timestamp).total_seconds() / 3600
@@ -689,33 +574,18 @@ class SmartContextInjector:
 
     async def _get_last_active_branch(self) -> Optional[str]:
         """Get the last active git branch"""
-        if not self.session_db:
-            return None
-
-        last_session = self.session_db.get_last_session()
-        return last_session.branch if last_session else None
+        # Simplified - return None since we don't track sessions
+        return None
 
     async def _get_last_activity_time(self) -> Optional[datetime]:
         """Get timestamp of last activity in project"""
-        if not self.session_db:
-            return None
-
-        last_session = self.session_db.get_last_session()
-        if last_session:
-            return last_session.end_time or last_session.start_time
-        return None
+        # Simplified - just return current time as fallback
+        return datetime.now()
 
     async def _get_recent_files(self, hours: int) -> List[str]:
         """Get files that were recently active"""
-        if not self.session_db:
-            return []
-
-        recent_sessions = self.session_db.get_recent_sessions(hours=hours)
-        recent_files = set()
-        for session in recent_sessions:
-            recent_files.update(session.active_files)
-
-        return list(recent_files)
+        # Simplified - return empty list since we don't track sessions
+        return []
 
 
 class AutoInjectionTrigger:
@@ -756,34 +626,13 @@ class AutoInjectionTrigger:
 
     async def _detect_significant_context_change(self, session: SessionContext) -> bool:
         """Detect if there's been a significant change in context that warrants injection"""
-
-        if not self.injector.session_tracker:
-            return False
-
-        try:
-            # Check file activity patterns
-            current_session = self.injector.session_tracker.current_session
-            if current_session:
-                # Significant new files added
-                current_files = set(session.current_files)
-                tracked_files = set(current_session.active_files)
-
-                new_files_ratio = len(current_files - tracked_files) / max(len(current_files), 1)
-                if new_files_ratio > 0.5:  # More than 50% new files
-                    return True
-
-                # Check for high-value file types
-                important_files = [
-                    f
-                    for f in session.current_files
-                    if any(f.endswith(ext) for ext in [".py", ".js", ".ts", ".go", ".java"])
-                ]
-                if len(important_files) > len(tracked_files):
-                    return True
-
-            return False
-        except:
-            return False
+        # Simplified - check if we have important files
+        important_files = [
+            f
+            for f in session.current_files
+            if any(f.endswith(ext) for ext in [".py", ".js", ".ts", ".go", ".java"])
+        ]
+        return len(important_files) > 2
 
     async def _check_additional_triggers(self, session: SessionContext) -> bool:
         """Check for additional triggers beyond session boundaries"""
@@ -815,86 +664,32 @@ class AutoInjectionTrigger:
 
     async def _calculate_file_trigger_score(self, session: SessionContext) -> float:
         """Calculate trigger score based on file activity"""
-
-        if not self.injector.session_db:
-            return 0.0
-
-        score = 0.0
-
-        # Check for recently modified files
-        for file_path in session.current_files:
-            file_sessions = self.injector.session_db.get_file_activity_history(file_path, days=1)
-            if file_sessions:
-                # Files with recent activity get higher scores
-                recent_activity = len(
-                    [
-                        s
-                        for s in file_sessions
-                        if (datetime.now() - s.start_time).total_seconds() < 3600
-                    ]
-                )
-                score += min(recent_activity * 0.3, 1.0)
-
-        return min(score, 1.0)
+        # Simplified - return moderate score based on number of files
+        return min(len(session.current_files) * 0.2, 1.0)
 
     async def _calculate_time_trigger_score(self, session: SessionContext) -> float:
         """Calculate trigger score based on time patterns"""
-
-        if not self.injector.session_db:
-            return 0.5  # Default score
-
-        # Get recent session patterns
-        recent_sessions = self.injector.session_db.get_recent_sessions(hours=72)
-
-        if not recent_sessions:
-            return 0.7  # High score for first session
-
-        # Calculate time since last meaningful session
-        last_session = recent_sessions[0]
-        time_gap = datetime.now() - (last_session.end_time or last_session.start_time)
-
-        # Score based on gap duration
-        gap_hours = time_gap.total_seconds() / 3600
-
-        if gap_hours > 8:  # Long gap
-            return 0.9
-        elif gap_hours > 2:  # Medium gap
-            return 0.6
-        elif gap_hours > 0.5:  # Short gap
-            return 0.3
-        else:  # Very short gap
-            return 0.1
+        # Simplified - return default moderate score
+        return 0.6
 
     async def _calculate_context_richness(self, session: SessionContext) -> float:
         """Calculate how much valuable context is available for injection"""
-
-        if not self.injector.session_db:
-            return 0.5
-
-        # Check for rich context indicators
+        # Simplified scoring based on available session data
         richness_score = 0.0
 
         # Multiple active files
         file_score = min(len(session.current_files) / 5.0, 1.0)
-        richness_score += file_score * 0.3
+        richness_score += file_score * 0.5
 
         # Recent commits
         if session.recent_commits:
             commit_score = min(len(session.recent_commits) / 3.0, 1.0)
-            richness_score += commit_score * 0.2
+            richness_score += commit_score * 0.3
 
-        # Active context threads
-        if self.injector.session_db:
-            active_threads = self.injector.session_db.get_active_context_threads(limit=3)
-            thread_score = min(len(active_threads) / 3.0, 1.0)
-            richness_score += thread_score * 0.3
-
-        # Session continuity
-        if self.injector.session_tracker:
-            current_session = self.injector.session_tracker.current_session
-            if current_session:
-                continuity_score = current_session.continuity_score
-                richness_score += continuity_score * 0.2
+        # Recent file changes
+        if session.recent_file_changes:
+            change_score = min(len(session.recent_file_changes) / 3.0, 1.0)
+            richness_score += change_score * 0.2
 
         return min(richness_score, 1.0)
 

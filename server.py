@@ -298,6 +298,25 @@ async def list_tools() -> list[types.Tool]:
                 "additionalProperties": False,
             },
         ),
+        types.Tool(
+            name="get_past_context",
+            description="Get summary from the last completed session to continue where we left off",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "max_tokens": {
+                        "type": "integer",
+                        "description": "Maximum tokens for context summary",
+                        "default": 1500,
+                    },
+                    "working_dir": {
+                        "type": "string",
+                        "description": "Working directory to find past sessions (defaults to current directory)",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        ),
     ]
 
 
@@ -409,6 +428,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> Sequence[types.Text
 
         elif name == "get_smart_context":
             return wrap_result(await retrieval_tools.get_smart_context(arguments), name)
+
+        elif name == "get_past_context":
+            return wrap_result(await retrieval_tools.get_past_context(arguments), name)
 
         else:
             raise ValueError(f"Unknown tool: {name}")

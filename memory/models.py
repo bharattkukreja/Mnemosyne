@@ -17,6 +17,7 @@ class Memory(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     conversation_id: Optional[str] = None
     developer_id: Optional[str] = None
+    session_id: Optional[str] = None
     embedding: Optional[List[float]] = None
 
 

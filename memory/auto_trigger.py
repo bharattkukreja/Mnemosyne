@@ -151,6 +151,9 @@ class AutoTrigger:
         self.store_tools = StoreTools(config)
         self.conversation_tracker = ConversationTracker()
 
+        # Session tracking removed - simplified approach
+        self.current_session_id: Optional[str] = None
+
         # File watching
         self.observer = None
         self.watch_directory = Path.cwd()  # Watch current working directory
@@ -194,6 +197,41 @@ class AutoTrigger:
     def add_conversation_message(self, content: str, source: str = "unknown", tool_calls: List[str] = None):
         """Add a message to conversation tracking"""
         self.conversation_tracker.add_message(content, source, tool_calls)
+
+        # Auto-start session if needed
+        if not self.current_session_id:
+            self.start_session()
+
+    def start_session(self, current_files: Optional[List[str]] = None) -> str:
+        """Start a new coding session"""
+        try:
+            # Generate simple session ID
+            import uuid
+            self.current_session_id = str(uuid.uuid4())
+
+            # Link session to store tools
+            self.store_tools.set_current_session_id(self.current_session_id)
+
+            logger.info(f"Started session {self.current_session_id}")
+            return self.current_session_id
+
+        except Exception as e:
+            logger.error(f"Failed to start session: {e}")
+            # Generate fallback session ID
+            import uuid
+            self.current_session_id = str(uuid.uuid4())
+            self.store_tools.set_current_session_id(self.current_session_id)
+            return self.current_session_id
+
+    def end_session(self, context_summary: Optional[str] = None):
+        """End the current coding session"""
+        if self.current_session_id:
+            logger.info(f"Ended session {self.current_session_id}")
+            self.current_session_id = None
+
+    def get_current_session_id(self) -> Optional[str]:
+        """Get the current session ID"""
+        return self.current_session_id
 
     async def handle_file_change(self, change: FileChange):
         """Handle a detected file change"""
@@ -336,6 +374,53 @@ class AutoTrigger:
         except Exception as e:
             logger.error(f"Failed to infer context from changes: {e}")
             return []
+
+    def _detect_current_files(self) -> List[str]:
+        """Detect files currently being worked on"""
+        current_dir = self.watch_directory
+        files = []
+
+        # Look for recently modified code files
+        for ext in ['.py', '.js', '.ts', '.jsx', '.tsx', '.go', '.rs']:
+            for file_path in current_dir.glob(f"**/*{ext}"):
+                if self._is_recently_modified(file_path):
+                    files.append(str(file_path.relative_to(current_dir)))
+
+        return files[:10]  # Limit to 10 files
+
+    def _is_recently_modified(self, file_path: Path) -> bool:
+        """Check if file was modified recently (within 1 hour)"""
+        try:
+            mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
+            return (datetime.now() - mtime) < timedelta(hours=1)
+        except:
+            return False
+
+    def _get_current_git_branch(self) -> str:
+        """Get current git branch"""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['git', 'branch', '--show-current'],
+                capture_output=True, text=True, cwd=self.watch_directory
+            )
+            return result.stdout.strip() if result.returncode == 0 else "main"
+        except:
+            return "main"
+
+    def _get_recent_commits(self) -> List[str]:
+        """Get recent git commits"""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['git', 'log', '--oneline', '-5'],
+                capture_output=True, text=True, cwd=self.watch_directory
+            )
+            if result.returncode == 0:
+                return result.stdout.strip().split('\n')
+        except:
+            pass
+        return []
 
 
 class MCPConversationIntegration:

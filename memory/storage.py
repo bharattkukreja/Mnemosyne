@@ -99,6 +99,7 @@ class MemoryStorage:
                     "timestamp": memory.timestamp.isoformat(),
                     "conversation_id": memory.conversation_id or "",
                     "developer_id": memory.developer_id or "",
+                    "session_id": memory.session_id or "",
                 }
             ],
             documents=[f"{memory.content} | {memory.reasoning}"],
@@ -170,6 +171,7 @@ class MemoryStorage:
                     timestamp=datetime.fromisoformat(metadata["timestamp"]),
                     conversation_id=metadata.get("conversation_id"),
                     developer_id=metadata.get("developer_id"),
+                    session_id=metadata.get("session_id"),
                 )
 
                 similarity_score = 1.0 - distance  # Convert distance to similarity
@@ -252,6 +254,7 @@ class MemoryStorage:
                         timestamp=datetime.fromisoformat(metadata["timestamp"]),
                         conversation_id=metadata.get("conversation_id"),
                         developer_id=metadata.get("developer_id"),
+                        session_id=metadata.get("session_id"),
                     )
             except Exception as e:
                 logger.error(f"Failed to get memory {memory_id}: {e}")
@@ -378,3 +381,86 @@ class MemoryStorage:
     def discover_knowledge_patterns(self) -> Dict[str, Any]:
         """Discover patterns and insights from the knowledge graph"""
         return self.knowledge_graph.find_knowledge_patterns()
+
+    def get_memories_by_session(self, session_id: str) -> List[SearchResult]:
+        """Get all memories from a specific session"""
+        try:
+            if self.storage_type == "chromadb":
+                return self._get_session_memories_chromadb(session_id)
+            else:
+                return self._get_session_memories_file(session_id)
+        except Exception as e:
+            logger.error(f"Failed to get memories for session {session_id}: {e}")
+            return []
+
+    def _get_session_memories_chromadb(self, session_id: str) -> List[SearchResult]:
+        """Get session memories from ChromaDB"""
+        results = self.collection.query(
+            query_embeddings=[[0.0] * self.config.embeddings.dimension],  # Dummy embedding
+            n_results=1000,  # Large number to get all results
+            where={"session_id": session_id},
+        )
+
+        search_results = []
+        if results["ids"] and results["ids"][0]:
+            for i, memory_id in enumerate(results["ids"][0]):
+                metadata = results["metadatas"][0][i]
+                document = results["documents"][0][i]
+
+                # Parse document back to content/reasoning
+                parts = document.split(" | ", 1)
+                content = parts[0]
+                reasoning = parts[1] if len(parts) > 1 else ""
+
+                memory = Memory(
+                    id=memory_id,
+                    type=metadata["type"],
+                    content=content,
+                    reasoning=reasoning,
+                    files=json.loads(metadata["files"]),
+                    tags=json.loads(metadata["tags"]),
+                    timestamp=datetime.fromisoformat(metadata["timestamp"]),
+                    conversation_id=metadata.get("conversation_id"),
+                    developer_id=metadata.get("developer_id"),
+                    session_id=metadata.get("session_id"),
+                )
+
+                search_results.append(
+                    SearchResult(
+                        memory=memory,
+                        similarity_score=1.0,  # Exact match
+                        relevance_score=1.0,
+                    )
+                )
+
+        # Sort by timestamp for chronological order
+        search_results.sort(key=lambda x: x.memory.timestamp)
+        return search_results
+
+    def _get_session_memories_file(self, session_id: str) -> List[SearchResult]:
+        """Get session memories from file storage"""
+        if not self.memories_file.exists():
+            return []
+
+        search_results = []
+        with open(self.memories_file, "r") as f:
+            for line in f:
+                try:
+                    data = json.loads(line.strip())
+                    if data.get("session_id") == session_id:
+                        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+                        memory = Memory(**data)
+
+                        search_results.append(
+                            SearchResult(
+                                memory=memory,
+                                similarity_score=1.0,
+                                relevance_score=1.0,
+                            )
+                        )
+                except Exception:
+                    continue
+
+        # Sort by timestamp for chronological order
+        search_results.sort(key=lambda x: x.memory.timestamp)
+        return search_results
