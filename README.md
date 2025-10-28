@@ -69,7 +69,7 @@ Mnemosyne automatically:
 #### 1. Clone and Install
 
 ```bash
-git clone https://github.com/yourusername/mnemosyne.git
+git clone https://github.com/bharattkukreja/mnemosyne.git
 cd mnemosyne
 pip install -r requirements.txt
 ```
@@ -449,7 +449,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/mnemosyne.git
+git clone https://github.com/bharattkukreja/mnemosyne.git
 cd mnemosyne
 
 # Create virtual environment
@@ -475,8 +475,8 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/mnemosyne/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/mnemosyne/discussions)
+- **Issues**: [GitHub Issues](https://github.com/bharattkukreja/mnemosyne/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/bharattkukreja/mnemosyne/discussions)
 
 ---
 
