@@ -63,6 +63,7 @@ Mnemosyne automatically:
 - **Python 3.11+**
 - **Cursor IDE** or **Claude Desktop**
 - **Git** (for version tracking features)
+- **Docker** (for Neo4j) or Neo4j Desktop
 
 ### Installation
 
@@ -74,7 +75,40 @@ cd mnemosyne
 pip install -r requirements.txt
 ```
 
-#### 2. Configure for Cursor
+This installs all required dependencies including:
+- **ChromaDB** - Vector database for semantic search
+- **sentence-transformers** - For generating embeddings
+- **neo4j driver** - For knowledge graph connections
+- **MCP server** - Model Context Protocol implementation
+
+ChromaDB will automatically initialize its storage in `~/.mnemosyne/chroma` when you first run the server.
+
+#### 2. Set Up Neo4j
+
+Mnemosyne requires Neo4j for its knowledge graph capabilities. Choose one option:
+
+**Option A: Docker (Recommended)**
+```bash
+docker run -d \
+  --name mnemosyne-neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/mnemosyne \
+  -v neo4j_data:/data \
+  neo4j:latest
+```
+
+**Option B: Neo4j Desktop**
+1. Download from [https://neo4j.com/desktop/](https://neo4j.com/desktop/)
+2. Create a new database
+3. Set password to `mnemosyne` (or customize in config.yaml)
+4. Start the database
+
+Verify Neo4j is running:
+```bash
+# Neo4j Browser should be accessible at http://localhost:7474
+```
+
+#### 3. Configure for Cursor
 
 ```bash
 # Initialize configuration
@@ -87,7 +121,7 @@ python cli.py configure-cursor
 python cli.py status
 ```
 
-#### 3. Configure for Claude Desktop
+#### 4. Configure for Claude Desktop
 
 Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
@@ -102,7 +136,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 }
 ```
 
-#### 4. Restart Your IDE
+#### 5. Restart Your IDE
 
 Restart Cursor or Claude Desktop to load the MCP server.
 
@@ -127,10 +161,14 @@ Expected output:
 ```
 ✅ Configuration: Valid
 ✅ Storage directory: ~/.mnemosyne
+✅ ChromaDB: Initialized at ~/.mnemosyne/chroma
+✅ Neo4j: Connected
 ✅ Cursor integration: Configured
 📦 Dependencies: Available
 💾 Stored memories: 0
 ```
+
+If Neo4j shows as disconnected, verify it's running and check your `config.yaml` credentials.
 
 ## Usage Examples
 
@@ -206,8 +244,8 @@ Relationships for "Use JWT authentication":
 ### Technology Stack
 
 - **MCP Server**: `mcp` package for Model Context Protocol
-- **Vector Database**: ChromaDB for semantic search (with file-based fallback)
-- **Graph Database**: Neo4j for knowledge graph (optional)
+- **Vector Database**: ChromaDB for semantic search and embeddings
+- **Graph Database**: Neo4j for knowledge graph and relationship tracking
 - **Embeddings**: sentence-transformers (local) or OpenAI API
 - **Language**: Python 3.11+
 
@@ -264,13 +302,13 @@ mcp:
   version: "0.1.0"
 
 storage:
-  vector_db: "chromadb"  # or "file" for simple storage
+  vector_db: "chromadb"
   vector_db_path: "~/.mnemosyne/chroma"
 
-  # Optional: Neo4j for knowledge graph
+  # Neo4j connection (required for knowledge graph)
   neo4j_uri: "bolt://localhost:7687"
   neo4j_user: "neo4j"
-  neo4j_password: "password"
+  neo4j_password: "mnemosyne"  # Change if you used a different password
 
 embeddings:
   model: "sentence-transformers/all-MiniLM-L6-v2"
@@ -286,21 +324,7 @@ logging:
   path: "~/.mnemosyne/logs"
 ```
 
-### Advanced: Neo4j Setup (Optional)
-
-For enhanced knowledge graph features:
-
-```bash
-# Docker (recommended)
-docker run -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/your_password \
-  neo4j:latest
-
-# Or use Neo4j Desktop
-# Download from https://neo4j.com/desktop/
-```
-
-Update `config.yaml` with Neo4j credentials, then restart the server.
+**Important:** Update the `neo4j_password` in `config.yaml` if you used a different password during Neo4j setup.
 
 ## Development Workflow
 
@@ -403,11 +427,24 @@ This tool is perfect for:
 2. Ensure sufficient disk space
 3. Verify Python package installations
 
-### Neo4j Connection Failed (Optional)
+### Neo4j Connection Failed
 
-1. Verify Neo4j is running: `docker ps`
-2. Test connection: `python -c "from neo4j import GraphDatabase; GraphDatabase.driver('bolt://localhost:7687', auth=('neo4j', 'password')).verify_connectivity()"`
-3. Check firewall settings for port 7687
+1. Verify Neo4j is running:
+   ```bash
+   docker ps  # Should show mnemosyne-neo4j container
+   # OR check Neo4j Desktop status
+   ```
+
+2. Test connection:
+   ```bash
+   python -c "from neo4j import GraphDatabase; GraphDatabase.driver('bolt://localhost:7687', auth=('neo4j', 'mnemosyne')).verify_connectivity()"
+   ```
+
+3. Common fixes:
+   - Check firewall settings for port 7687
+   - Ensure password in `config.yaml` matches Neo4j password
+   - Restart Neo4j container: `docker restart mnemosyne-neo4j`
+   - Check Neo4j logs: `docker logs mnemosyne-neo4j`
 
 ### Check Logs
 
